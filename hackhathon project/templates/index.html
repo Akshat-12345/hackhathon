@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Assistant</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        #language-display {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        #status {
+            color: #7f8c8d;
+            font-style: italic;
+            margin: 10px 0;
+            min-height: 20px;
+        }
+        #response {
+            background-color: #ecf0f1;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            min-height: 60px;
+            border-left: 4px solid #3498db;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 12px 20px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        button#listen-btn {
+            background-color: #2ecc71;
+        }
+        button#listen-btn:hover {
+            background-color: #27ae60;
+        }
+        button#language-btn {
+            background-color: #9b59b6;
+        }
+        button#language-btn:hover {
+            background-color: #8e44ad;
+        }
+        #gemini-mode {
+            display: none;
+            margin-top: 20px;
+            padding: 20px;
+            background-color: #e8f4fc;
+            border-radius: 5px;
+            border-left: 4px solid #f39c12;
+        }
+        #gemini-question {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        .command-examples {
+            background-color: #fff;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .command {
+            margin: 8px 0;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 3px;
+            border-left: 3px solid #3498db;
+        }
+        .mic-icon {
+            font-size: 20px;
+            vertical-align: middle;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Voice Assistant</h1>
+        <div id="language-display">Language: Hindi</div>
+    </header>
+
+    <div class="button-group">
+        <button id="listen-btn"><span class="mic-icon">🎤</span> Speak Command</button>
+        <button id="language-btn">Switch to English</button>
+    </div>
+
+    <div id="status">Ready to listen. Click the microphone and speak.</div>
+    
+    <div id="response">नमस्ते! मैं आपकी कैसे मदद कर सकती हूँ?</div>
+
+    <div class="command-examples">
+        <h3>Try these commands:</h3>
+        <div class="command">"नोटपैड खोलो" (Open Notepad)</div>
+        <div class="command">"समय बताओ" (Tell me the time)</div>
+        <div class="command">"यूट्यूब खोलो" (Open YouTube)</div>
+        <div class="command">"भाषा बदलो" (Change language)</div>
+        <div class="command">"जेमिनी से पूछो" (Ask Gemini)</div>
+    </div>
+    
+    <div id="gemini-mode"> <!-- Remove style="display: none" -->
+        <h3>Gemini Pro Mode</h3>
+        <input type="text" id="gemini-question" placeholder="Type or speak your question...">
+        <div style="display: flex; gap: 10px; margin-top: 10px;">
+            <button onclick="askGemini()">Ask Gemini</button>
+            <button id="listen-gemini"><span class="mic-icon">🎤</span></button>
+        </div>
+    </div>
+    </div>
+
+    <script>
+        // Global variables
+        let LANGUAGE = "hindi";
+        const languageDisplay = document.getElementById("language-display");
+        const listenBtn = document.getElementById("listen-btn");
+        const geminiListenBtn = document.getElementById("listen-gemini");
+        const languageBtn = document.getElementById("language-btn");
+        const responseDiv = document.getElementById("response");
+        const statusDiv = document.getElementById("status");
+        const geminiMode = document.getElementById("gemini-mode");
+
+        // Initialize Speech Recognition
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            statusDiv.innerHTML = "<span style='color:red'>Speech recognition not supported in your browser. Please use Chrome or Edge.</span>";
+            listenBtn.disabled = true;
+            geminiListenBtn.disabled = true;
+        }
+
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = "hi-IN"; // Default to Hindi
+
+        // Event Listeners
+        listenBtn.addEventListener("click", startListening);
+        geminiListenBtn.addEventListener("click", startListeningForGemini);
+        languageBtn.addEventListener("click", changeLanguage);
+
+        // Update recognition language based on current setting
+        function updateRecognitionLanguage() {
+            recognition.lang = LANGUAGE === "hindi" ? "hi-IN" : "en-US";
+            console.log("Recognition language set to:", recognition.lang);
+        }
+
+        // Start listening for regular commands
+        function startListening() {
+            statusDiv.textContent = LANGUAGE === "hindi" ? "सुन रही हूँ..." : "Listening...";
+            recognition.stop(); // Stop any ongoing recognition
+            setTimeout(() => {
+                recognition.start();
+            }, 300);
+        }
+
+        // Start listening for Gemini questions
+        function startListeningForGemini() {
+            document.getElementById("gemini-question").value = "";
+            statusDiv.textContent = LANGUAGE === "hindi" 
+                ? "प्रश्न के लिए सुन रही हूँ..." 
+                : "Listening for your question...";
+            recognition.stop();
+            setTimeout(() => {
+                recognition.start();
+            }, 300);
+        }
+
+        // Process recognition results
+        recognition.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            statusDiv.textContent = (LANGUAGE === "hindi" ? "प्रोसेस कर रही हूँ: " : "Processing: ") + transcript;
+            
+            if (geminiMode.style.display === "block") {
+                document.getElementById("gemini-question").value = transcript;
+            } else {
+                processVoiceCommand(transcript);
+            }
+        };
+
+        // Handle recognition errors
+        recognition.onerror = (event) => {
+            let errorMessage = "Error: " + event.error;
+            if (event.error === "not-allowed") {
+                errorMessage = LANGUAGE === "hindi" 
+                    ? "माइक्रोफ़ोन एक्सेस अस्वीकृत। कृपया अनुमति दें।" 
+                    : "Microphone access denied. Please allow permissions.";
+            }
+            statusDiv.innerHTML = `<span style="color:red">${errorMessage}</span>`;
+        };
+
+        // Process voice commands
+        function processVoiceCommand(command) {
+            fetch("/process_command", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ command: command })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.current_language && data.current_language !== LANGUAGE) {
+                    LANGUAGE = data.current_language;
+                    updateUIForLanguage();
+                }
+                responseDiv.textContent = data.text;
+                
+                if (data.action === "activate_gemini") {
+                    activateGeminiMode();
+                }
+            })
+            .catch(error => {
+                const errorMsg = LANGUAGE === "hindi" 
+                    ? "त्रुटि: कमांड प्रोसेस नहीं हो पाया" 
+                    : "Error: Could not process command";
+                statusDiv.textContent = errorMsg;
+                console.error("Error:", error);
+            });
+        }
+
+        // Change language
+        function changeLanguage() {
+            const command = LANGUAGE === "hindi" ? "change language to english" : "change language to hindi";
+            
+            fetch("/process_command", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ command: command })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === "success") {
+                    LANGUAGE = data.current_language || LANGUAGE;
+                    updateUIForLanguage();
+                    responseDiv.textContent = data.text;
+                }
+            });
+        }
+
+        // Update UI when language changes
+        function updateUIForLanguage() {
+            // Update recognition language
+            updateRecognitionLanguage();
+            
+            // Update UI elements
+            languageDisplay.textContent = `Language: ${LANGUAGE === "hindi" ? "Hindi" : "English"}`;
+            languageBtn.textContent = LANGUAGE === "hindi" ? "Switch to English" : "Switch to Hindi";
+            
+            // Update example commands
+            if (LANGUAGE === "hindi") {
+                document.querySelector(".command-examples h3").textContent = "इन कमांड्स को आज़माएँ:";
+                document.querySelectorAll(".command")[0].textContent = "\"नोटपैड खोलो\" (Open Notepad)";
+                document.querySelectorAll(".command")[1].textContent = "\"समय बताओ\" (Tell me the time)";
+                document.querySelectorAll(".command")[2].textContent = "\"यूट्यूब खोलो\" (Open YouTube)";
+                document.querySelectorAll(".command")[3].textContent = "\"भाषा बदलो\" (Change language)";
+                document.querySelectorAll(".command")[4].textContent = "\"जेमिनी से पूछो\" (Ask Gemini)";
+            } else {
+                document.querySelector(".command-examples h3").textContent = "Try these commands:";
+                document.querySelectorAll(".command")[0].textContent = "\"Open notepad\"";
+                document.querySelectorAll(".command")[1].textContent = "\"What time is it?\"";
+                document.querySelectorAll(".command")[2].textContent = "\"Open YouTube\"";
+                document.querySelectorAll(".command")[3].textContent = "\"Change language\"";
+                document.querySelectorAll(".command")[4].textContent = "\"Ask Gemini\"";
+            }
+        }
+
+        // Activate Gemini mode
+        function activateGeminiMode() {
+            const geminiMode = document.getElementById("gemini-mode");
+            
+            // First make it visible (but still transparent)
+            geminiMode.style.display = 'block';
+            
+            // Force reflow before adding visible class
+            void geminiMode.offsetWidth;
+            
+            // Now trigger the transition
+            geminiMode.classList.add('visible');
+            
+            // Focus on the input field
+            setTimeout(() => {
+                document.getElementById("gemini-question").focus();
+            }, 300);
+            
+            statusDiv.textContent = LANGUAGE === "hindi" 
+                ? "जेमिनी मोड सक्रिय - अपना प्रश्न पूछें" 
+                : "Gemini mode active - ask your question";
+        }
+        // Ask Gemini a question
+        function askGemini() {
+            const question = document.getElementById("gemini-question").value.trim();
+            if (!question) {
+                statusDiv.textContent = LANGUAGE === "hindi" 
+                    ? "कृपया एक प्रश्न दर्ज करें" 
+                    : "Please enter a question";
+                return;
+            }
+
+            statusDiv.textContent = LANGUAGE === "hindi" 
+                ? "जेमिनी से पूछ रही हूँ..." 
+                : "Asking Gemini...";
+
+            fetch("/ask_gemini", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ question: question })
+            })
+            .then(response => response.json())
+            .then(data => {
+                responseDiv.textContent = data.text;
+                statusDiv.textContent = LANGUAGE === "hindi" 
+                    ? "जेमिनी ने उत्तर दिया" 
+                    : "Gemini responded";
+            })
+            .catch(error => {
+                statusDiv.textContent = LANGUAGE === "hindi" 
+                    ? "त्रुटि: जेमिनी से जुड़ने में समस्या" 
+                    : "Error: Problem connecting to Gemini";
+                console.error("Error:", error);
+            });
+        }
+    </script>
+</body>
+</html>
